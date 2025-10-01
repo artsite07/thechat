@@ -51,7 +51,7 @@
     // Inisialisasi messaging untuk notifikasi foreground
     const messaging = getMessaging(app); 
 
-    const LOGIN_PAGE = "index.html"; 
+    const LOGIN_PAGE = "./index.html"; // MENGGUNAKAN PATH RELATIF ROOT AGAR LEBIH AMAN
 
     const user = JSON.parse(localStorage.getItem("user"));
     
