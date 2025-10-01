@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Chat — TheChat</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background: #f9fafb
+    }
+  </style>
+</head>
+
+<body class="min-h-screen flex flex-col">
+  <!-- header -->
+  <div class="flex items-center justify-between bg-cyan-600 text-white p-3">
+    <div class="flex items-center gap-2">
+      <button onclick="window.location.href='contacts.html'" class="px-2">⬅</button>
+      <div>
+        <div id="contactName" class="font-semibold">Kontak</div>
+        <div id="contactId" class="text-xs text-cyan-100"></div>
+      </div>
+    </div>
+    <button id="btn-logout" class="text-sm bg-red-500 px-2 py-1 rounded">Keluar</button>
+  </div>
+
+  <!-- messages -->
+  <div id="messages" class="flex-1 overflow-y-auto p-3 space-y-2"></div>
+
+  <!-- input -->
+  <form id="form" class="p-3 border-t bg-white flex gap-2">
+    <input id="input" type="text" placeholder="Tulis pesan..." class="flex-1 border rounded px-3 py-2" />
+    <button class="bg-cyan-600 text-white px-4 rounded">Kirim</button>
+  </form>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCG36zXHqQPCFNIda0s_QI6fOKszAQtZ0Y",
+      authDomain: "thechat-b16c7.firebaseapp.com",
+      databaseURL: "https://thechat-b16c7-default-rtdb.firebaseio.com",
+      projectId: "thechat-b16c7",
+      storageBucket: "thechat-b16c7.firebasestorage.app",
+      messagingSenderId: "562294284683",
+      appId: "1:562294284683:web:ba118aa7de6a93a833cf8e"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('input');
+    const formEl = document.getElementById('form');
+    const contactNameEl = document.getElementById('contactName');
+    const contactIdEl = document.getElementById('contactId');
+
+    // cek user login dari localStorage
+    const saved = localStorage.getItem('user');
+    if (!saved) {
+      window.location.href = 'login.html';
+      throw new Error('Not logged in');
+    }
+    const currentUser = JSON.parse(saved);
+
+    // ambil query string
+    const params = new URLSearchParams(window.location.search);
+    const chatId = params.get('chatId');
+    const contactName = params.get('name');
+    const contactUid = params.get('uid');
+
+    contactNameEl.textContent = contactName || 'Kontak';
+    contactIdEl.textContent = contactUid || '';
+
+    // realtime listener pesan
+    db.collection('messages').doc(chatId).collection('items').orderBy('createdAt')
+      .onSnapshot(snap => {
+        messagesEl.innerHTML = '';
+        snap.forEach(doc => {
+          const msg = doc.data();
+          const div = document.createElement('div');
+          div.className = `p-2 rounded max-w-xs ${msg.uid === currentUser.uid ? 'ml-auto bg-cyan-600 text-white' : 'bg-gray-200'}`;
+          div.textContent = msg.text;
+          messagesEl.appendChild(div);
+        });
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      });
+
+    // kirim pesan
+    formEl.addEventListener('submit', async e => {
+      e.preventDefault();
+      const text = inputEl.value.trim();
+      if (!text) return;
+      inputEl.value = '';
+      await db.collection('messages').doc(chatId).collection('items').add({
+        uid: currentUser.uid,
+        name: currentUser.displayName,
+        text: text,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+
+    document.getElementById('btn-logout').addEventListener('click', () => {
+      localStorage.removeItem('user');
+      auth.signOut().finally(() => {
+        window.location.href = 'login.html';
+      });
+    });
+  </script>
+</body>
+
+</html>
