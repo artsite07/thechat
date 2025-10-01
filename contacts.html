@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Kontak — TheChat</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background: #f3f4f6
+    }
+
+    .contact:hover {
+      background: #eef2ff
+    }
+  </style>
+</head>
+
+<body class="min-h-screen">
+  <div class="max-w-4xl mx-auto mt-8">
+    <div class="bg-white shadow rounded-lg overflow-hidden">
+      <!-- header -->
+      <div class="flex items-center justify-between p-4 border-b">
+        <div class="flex items-center gap-3">
+          <div id="avatar" class="w-12 h-12 rounded-full bg-cyan-400 flex items-center justify-center text-white font-bold">A</div>
+          <div>
+            <div id="displayName" class="font-semibold">Nama</div>
+            <div id="userEmail" class="text-xs text-slate-500">—</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btn-refresh" class="px-3 py-1 rounded border text-sm">Refresh</button>
+          <button id="btn-signout" class="px-3 py-1 rounded bg-red-500 text-white text-sm">Keluar</button>
+        </div>
+      </div>
+
+      <!-- search -->
+      <div class="p-3 border-b">
+        <input id="search" type="text" placeholder="Cari kontak..." class="w-full px-3 py-2 rounded border" />
+      </div>
+
+      <!-- list contacts -->
+      <div id="list" class="divide-y"></div>
+
+      <div class="p-4 text-sm text-slate-500">* Klik kontak untuk membuka ruang chat pribadi.</div>
+    </div>
+  </div>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+  <script>
+    // --- Ganti config jika perlu ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyCG36zXHqQPCFNIda0s_QI6fOKszAQtZ0Y",
+      authDomain: "thechat-b16c7.firebaseapp.com",
+      databaseURL: "https://thechat-b16c7-default-rtdb.firebaseio.com",
+      projectId: "thechat-b16c7",
+      storageBucket: "thechat-b16c7.firebasestorage.app",
+      messagingSenderId: "562294284683",
+      appId: "1:562294284683:web:ba118aa7de6a93a833cf8e"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    const listEl = document.getElementById('list');
+    const searchEl = document.getElementById('search');
+    const displayNameEl = document.getElementById('displayName');
+    const avatarEl = document.getElementById('avatar');
+    const userEmailEl = document.getElementById('userEmail');
+    const btnSignout = document.getElementById('btn-signout');
+    const btnRefresh = document.getElementById('btn-refresh');
+
+    // ambil user dari localStorage (login.html menyimpan ini)
+    const saved = localStorage.getItem('user');
+    if (!saved) {
+      // kalau tidak ada, kembali ke login
+      window.location.href = 'login.html';
+      throw new Error('Not logged in');
+    }
+
+    const currentUser = JSON.parse(saved);
+    displayNameEl.textContent = currentUser.displayName;
+    avatarEl.textContent = (currentUser.displayName || 'U').charAt(0).toUpperCase();
+    userEmailEl.textContent = currentUser.email || '';
+
+    // pastikan dokumen user ada di collection users
+    db.collection('users').doc(currentUser.uid).set({
+      uid: currentUser.uid,
+      name: currentUser.displayName,
+      photoURL: currentUser.photoURL || '',
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, {
+      merge: true
+    }).catch(console.error);
+
+    // load semua users kecuali current
+    async function loadContacts() {
+      listEl.innerHTML = '<div class="p-4 text-sm text-slate-500">Memuat...</div>';
+      try {
+        const snap = await db.collection('users').orderBy('name').get();
+        const items = [];
+        snap.forEach(doc => items.push(doc.data()));
+        renderList(items);
+      } catch (err) {
+        listEl.innerHTML = '<div class="p-4 text-sm text-red-500">Gagal memuat kontak</div>';
+        console.error(err);
+      }
+    }
+
+    function renderList(users) {
+      const q = searchEl.value.trim().toLowerCase();
+      const filtered = users.filter(u => u.uid !== currentUser.uid && (!q || (u.name || '').toLowerCase().includes(q)));
+      if (filtered.length === 0) {
+        listEl.innerHTML = '<div class="p-4 text-sm text-slate-500">Tidak ada kontak.</div>';
+        return;
+      }
+      listEl.innerHTML = '';
+      filtered.forEach(u => {
+        const row = document.createElement('div');
+        row.className = 'p-3 contact flex items-center gap-3 cursor-pointer';
+
+        const av = document.createElement('div');
+        av.className = 'w-12 h-12 rounded-full bg-cyan-300 flex items-center justify-center font-semibold text-white';
+        av.textContent = (u.name || 'U').charAt(0).toUpperCase();
+
+        const meta = document.createElement('div');
+        meta.className = 'flex-1';
+        meta.innerHTML = `<div class="font-semibold">${escapeHtml(u.name||'Anon')}</div>
+                          <div class="text-xs text-slate-500">ID: ${u.uid}</div>`;
+
+        row.appendChild(av);
+        row.appendChild(meta);
+        row.addEventListener('click', () => {
+          // buka chat 1:1
+          const chatId = [currentUser.uid, u.uid].sort().join('_');
+          window.location.href = `chat.html?chatId=${encodeURIComponent(chatId)}&name=${encodeURIComponent(u.name)}&uid=${encodeURIComponent(u.uid)}`;
+        });
+
+        listEl.appendChild(row);
+      });
+    }
+
+    searchEl.addEventListener('input', () => loadContacts());
+    btnRefresh.addEventListener('click', () => loadContacts());
+
+    btnSignout.addEventListener('click', async () => {
+      // clear localStorage and sign out firebase if possible then redirect
+      localStorage.removeItem('user');
+      try {
+        await auth.signOut();
+      } catch (e) {}
+      window.location.href = 'login.html';
+    });
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    }
+
+    // awal load
+    loadContacts();
+  </script>
+</body>
+
+</html>
