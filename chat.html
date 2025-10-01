@@ -48,23 +48,31 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
-    const messaging = getMessaging(app);
+    // Inisialisasi messaging untuk notifikasi foreground
+    const messaging = getMessaging(app); 
 
     const LOGIN_PAGE = "index.html"; 
 
     const user = JSON.parse(localStorage.getItem("user"));
-    if (!user) window.location.href = LOGIN_PAGE;
+    
+    // PENTING: Periksa apakah user ada
+    if (!user || !user.uid) {
+        console.error("Pengguna tidak terautentikasi atau data user tidak lengkap. Mengarahkan ke halaman login.");
+        window.location.href = LOGIN_PAGE;
+        // Hentikan eksekusi script lebih lanjut jika user tidak ada
+        // return; 
+    }
 
     const params = new URLSearchParams(window.location.search);
     const chatId = params.get("chatId");
     const receiverId = params.get("uid");
     const receiverName = params.get("name");
     
-    // Pastikan parameter ada
+    // Pastikan parameter chat lengkap
     if (!chatId || !receiverId || !receiverName) {
-        console.error("Parameter chat tidak lengkap.");
+        console.error("Parameter chat tidak lengkap. Kembali ke halaman kontak.");
         history.back();
-        return;
+        // return; 
     }
 
     document.getElementById("chatName").textContent = receiverName;
@@ -74,6 +82,7 @@
 
     /**
      * Mengirim pesan baru ke Firestore.
+     * DITAMBAHKAN: Blok try-catch untuk menangkap error saat addDoc.
      */
     async function sendMessage() {
       const msgInput = document.getElementById("msgInput");
@@ -81,58 +90,78 @@
       if (!text) return;
       
       try {
+          // Nonaktifkan tombol kirim sebentar untuk mencegah pengiriman ganda
+          document.getElementById("sendBtn").disabled = true;
+
           await addDoc(msgRef, {
             text,
             senderId: user.uid,
             receiverId,
             createdAt: new Date()
           });
+          
           msgInput.value = "";
+          document.getElementById("sendBtn").disabled = false;
       } catch (error) {
-          console.error("Error sending message:", error);
+          console.error("Error mengirim pesan ke Firestore:", error);
+          document.getElementById("sendBtn").disabled = false;
+          // Tampilkan pesan error sederhana ke pengguna (misalnya, di konsol atau UI)
+          alert("Gagal mengirim pesan. Periksa koneksi atau konsol untuk detail.");
       }
     }
 
     document.getElementById("sendBtn").addEventListener("click", sendMessage);
 
+    // Memungkinkan pengiriman pesan dengan tombol Enter
+    document.getElementById("msgInput").addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault(); // Mencegah newline di input
+            sendMessage();
+        }
+    });
+
+
     // 1. Listener Real-time untuk Pesan
-    const q = query(msgRef, orderBy("createdAt"));
+    // Menggunakan orderBy("createdAt") harus didukung oleh indeks Firestore.
+    const q = query(msgRef, orderBy("createdAt")); 
+    
     onSnapshot(q, (snapshot) => {
       const container = document.getElementById("messages");
-      container.innerHTML = ""; // Hapus pesan lama
+      // Hanya hapus dan render ulang jika ada perubahan dokumen
+      // Menghapus elemen satu per satu lebih efisien, tapi ini cukup untuk saat ini.
+      if (snapshot.docChanges().length > 0) { 
+        container.innerHTML = ""; // Hapus pesan lama
 
-      snapshot.forEach((doc) => {
-        const msg = doc.data();
-        const isSender = msg.senderId === user.uid;
-        const div = document.createElement("div");
+        snapshot.forEach((doc) => {
+          const msg = doc.data();
+          const isSender = msg.senderId === user.uid;
+          const div = document.createElement("div");
+          
+          // Styling bubble pesan
+          const alignmentClass = isSender ? "text-right" : "text-left";
+          const bubbleColor = isSender ? 'bg-cyan-500 text-white' : 'bg-gray-200 text-gray-800';
+
+          div.className = alignmentClass;
+          div.innerHTML = `
+              <div class="inline-block px-4 py-2 rounded-xl max-w-xs break-words ${bubbleColor} shadow-md">
+                  ${msg.text}
+              </div>`;
+          container.appendChild(div);
+        });
         
-        // Styling bubble pesan
-        const alignmentClass = isSender ? "text-right" : "text-left";
-        const bubbleColor = isSender ? 'bg-cyan-500 text-white' : 'bg-gray-200 text-gray-800';
-
-        div.className = alignmentClass;
-        div.innerHTML = `
-            <div class="inline-block px-4 py-2 rounded-xl max-w-xs break-words ${bubbleColor} shadow-md">
-                ${msg.text}
-            </div>`;
-        container.appendChild(div);
-      });
-      
-      // Gulir ke bawah secara otomatis
-      container.scrollTop = container.scrollHeight;
+        // Gulir ke bawah secara otomatis
+        container.scrollTop = container.scrollHeight;
+      }
+    }, (error) => {
+        // Penanganan error pada listener Firestore (misalnya, error izin/rules)
+        console.error("Error pada real-time listener Firestore:", error);
+        alert("Gagal memuat pesan. Periksa Firebase Security Rules Anda.");
     });
     
-    // 2. Listener Notifikasi Foreground (jika pesan diterima saat tab ini terbuka)
+    // 2. Listener Notifikasi Foreground
     onMessage(messaging, (payload) => {
       console.log('Pesan Foreground Diterima:', payload);
-      // Jika pesan adalah untuk chat ini, onSnapshot akan menangkapnya.
-      // Jika pesan dari chat lain, kita bisa memberi notifikasi ringan,
-      // tapi dalam konteks chat.html, umumnya kita biarkan onSnapshot yang bekerja.
-      // Kita bisa menambahkan UI feedback di sini jika diperlukan.
-      if (payload.data && payload.data.chatId !== chatId) {
-         // Pesan dari chat lain, kita bisa menampilkan banner/toast di dalam aplikasi
-         console.log(`Pesan dari chat lain (${payload.data.chatId}): ${payload.notification.body}`);
-      }
+      // Notifikasi di dalam aplikasi (jika diperlukan)
     });
   </script>
 </body>
