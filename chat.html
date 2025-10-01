@@ -2,23 +2,40 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chat - TheChat</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 h-screen flex flex-col">
-  <header class="bg-cyan-500 text-white p-4 flex justify-between items-center">
-    <button onclick="history.back()">⬅</button>
-    <h1 id="chatName"></h1>
+  <header class="bg-cyan-500 text-white p-4 flex justify-between items-center shadow-lg">
+    <button onclick="history.back()" class="text-xl font-bold p-1 rounded-full hover:bg-cyan-600 transition">⬅</button>
+    <h1 id="chatName" class="text-xl font-semibold truncate max-w-[70%]"></h1>
+    <div></div> <!-- Placeholder for layout -->
   </header>
-  <main id="messages" class="flex-1 overflow-y-auto p-4 space-y-2"></main>
-  <footer class="p-4 bg-white flex gap-2">
-    <input id="msgInput" class="flex-1 border rounded-lg px-3 py-2" placeholder="Ketik pesan...">
-    <button id="sendBtn" class="bg-cyan-500 text-white px-4 py-2 rounded-lg">Kirim</button>
+  <main id="messages" class="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar"></main>
+  <footer class="p-3 bg-white flex gap-2 border-t shadow-inner">
+    <input id="msgInput" class="flex-1 border border-gray-300 rounded-full px-4 py-2 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition" placeholder="Ketik pesan..." onkeypress="if(event.key === 'Enter') document.getElementById('sendBtn').click()">
+    <button id="sendBtn" class="bg-cyan-500 text-white px-5 py-2 rounded-full font-semibold hover:bg-cyan-600 transition">Kirim</button>
   </footer>
+
+  <style>
+    /* Styling tambahan untuk scrollbar */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background-color: #999;
+      border-radius: 3px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #f1f1f1;
+    }
+  </style>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
     import { getFirestore, collection, addDoc, query, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+    import { getMessaging, onMessage } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCG36zXHqQPCFNIda0s_QI6fOKszAQtZ0Y",
@@ -31,44 +48,91 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
+    const messaging = getMessaging(app);
+
+    const LOGIN_PAGE = "index.html"; 
 
     const user = JSON.parse(localStorage.getItem("user"));
-    if (!user) window.location.href = "login.html";
+    if (!user) window.location.href = LOGIN_PAGE;
 
     const params = new URLSearchParams(window.location.search);
     const chatId = params.get("chatId");
     const receiverId = params.get("uid");
     const receiverName = params.get("name");
+    
+    // Pastikan parameter ada
+    if (!chatId || !receiverId || !receiverName) {
+        console.error("Parameter chat tidak lengkap.");
+        history.back();
+        return;
+    }
+
     document.getElementById("chatName").textContent = receiverName;
 
+    // Path koleksi pesan
     const msgRef = collection(db, "messages", chatId, "chats");
 
+    /**
+     * Mengirim pesan baru ke Firestore.
+     */
     async function sendMessage() {
-      const text = document.getElementById("msgInput").value.trim();
+      const msgInput = document.getElementById("msgInput");
+      const text = msgInput.value.trim();
       if (!text) return;
-      await addDoc(msgRef, {
-        text,
-        senderId: user.uid,
-        receiverId,
-        createdAt: new Date()
-      });
-      document.getElementById("msgInput").value = "";
+      
+      try {
+          await addDoc(msgRef, {
+            text,
+            senderId: user.uid,
+            receiverId,
+            createdAt: new Date()
+          });
+          msgInput.value = "";
+      } catch (error) {
+          console.error("Error sending message:", error);
+      }
     }
 
     document.getElementById("sendBtn").addEventListener("click", sendMessage);
 
+    // 1. Listener Real-time untuk Pesan
     const q = query(msgRef, orderBy("createdAt"));
     onSnapshot(q, (snapshot) => {
       const container = document.getElementById("messages");
-      container.innerHTML = "";
+      container.innerHTML = ""; // Hapus pesan lama
+
       snapshot.forEach((doc) => {
         const msg = doc.data();
+        const isSender = msg.senderId === user.uid;
         const div = document.createElement("div");
-        div.className = msg.senderId === user.uid ? "text-right" : "text-left";
-        div.innerHTML = `<div class="inline-block px-3 py-2 rounded-lg ${msg.senderId === user.uid ? 'bg-cyan-500 text-white' : 'bg-gray-200'}">${msg.text}</div>`;
+        
+        // Styling bubble pesan
+        const alignmentClass = isSender ? "text-right" : "text-left";
+        const bubbleColor = isSender ? 'bg-cyan-500 text-white' : 'bg-gray-200 text-gray-800';
+
+        div.className = alignmentClass;
+        div.innerHTML = `
+            <div class="inline-block px-4 py-2 rounded-xl max-w-xs break-words ${bubbleColor} shadow-md">
+                ${msg.text}
+            </div>`;
         container.appendChild(div);
       });
+      
+      // Gulir ke bawah secara otomatis
       container.scrollTop = container.scrollHeight;
+    });
+    
+    // 2. Listener Notifikasi Foreground (jika pesan diterima saat tab ini terbuka)
+    onMessage(messaging, (payload) => {
+      console.log('Pesan Foreground Diterima:', payload);
+      // Jika pesan adalah untuk chat ini, onSnapshot akan menangkapnya.
+      // Jika pesan dari chat lain, kita bisa memberi notifikasi ringan,
+      // tapi dalam konteks chat.html, umumnya kita biarkan onSnapshot yang bekerja.
+      // Kita bisa menambahkan UI feedback di sini jika diperlukan.
+      if (payload.data && payload.data.chatId !== chatId) {
+         // Pesan dari chat lain, kita bisa menampilkan banner/toast di dalam aplikasi
+         console.log(`Pesan dari chat lain (${payload.data.chatId}): ${payload.notification.body}`);
+      }
     });
   </script>
 </body>

@@ -6,10 +6,10 @@
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
-  <div class="max-w-md mx-auto bg-white rounded-2xl shadow-md mt-10 p-4">
-    <h1 class="text-xl font-bold mb-4">Daftar Kontak</h1>
-    <ul id="contactsList" class="space-y-2"></ul>
-    <button id="logoutBtn" class="mt-4 bg-red-500 text-white px-4 py-2 rounded-lg">Keluar</button>
+  <div class="max-w-md mx-auto bg-white rounded-2xl shadow-xl mt-10 p-6">
+    <h1 class="text-3xl font-extrabold mb-6 text-cyan-700 border-b pb-2">Daftar Kontak</h1>
+    <ul id="contactsList" class="space-y-3"></ul>
+    <button id="logoutBtn" class="w-full mt-6 bg-red-500 text-white px-4 py-3 rounded-lg hover:bg-red-600 transition duration-150">Keluar</button>
   </div>
 
   <script type="module">
@@ -30,36 +30,54 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
+    // Menggunakan index.html sebagai halaman login
+    const LOGIN_PAGE = "index.html"; 
+
     const user = JSON.parse(localStorage.getItem("user"));
-    if (!user) window.location.href = "login.html";
+    if (!user) {
+        window.location.href = LOGIN_PAGE;
+    }
 
     async function loadContacts() {
-      const querySnapshot = await getDocs(collection(db, "users"));
-      const list = document.getElementById("contactsList");
-      list.innerHTML = "";
-      querySnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        if (data.uid !== user.uid) {
-          const li = document.createElement("li");
-          li.innerHTML = `
-            <div class="flex items-center justify-between p-3 bg-cyan-50 rounded-lg cursor-pointer hover:bg-cyan-100">
-              <span>${data.name}</span>
-            </div>`;
-          li.addEventListener("click", () => {
-            const chatId = [user.uid, data.uid].sort().join("_");
-            window.location.href = `chat.html?chatId=${chatId}&uid=${data.uid}&name=${encodeURIComponent(data.name)}`;
-          });
-          list.appendChild(li);
-        }
-      });
+      try {
+        const querySnapshot = await getDocs(collection(db, "users"));
+        const list = document.getElementById("contactsList");
+        list.innerHTML = "";
+        
+        querySnapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          // Hanya tampilkan kontak lain, bukan diri sendiri
+          if (data.uid && data.uid !== user.uid) { 
+            const li = document.createElement("li");
+            li.innerHTML = `
+              <div class="flex items-center justify-between p-3 bg-cyan-50 rounded-xl cursor-pointer hover:bg-cyan-100 transition duration-150">
+                <span class="font-medium text-gray-800">${data.name}</span>
+                <span class="text-sm text-cyan-500 font-semibold">Chat</span>
+              </div>`;
+            
+            li.addEventListener("click", () => {
+              // Membuat chatId yang konsisten dengan mengurutkan UID
+              const chatId = [user.uid, data.uid].sort().join("_"); 
+              window.location.href = `chat.html?chatId=${chatId}&uid=${data.uid}&name=${encodeURIComponent(data.name)}`;
+            });
+            list.appendChild(li);
+          }
+        });
+      } catch (error) {
+        console.error("Error loading contacts:", error);
+      }
     }
 
     loadContacts();
 
     document.getElementById("logoutBtn").addEventListener("click", async () => {
-      await signOut(auth);
-      localStorage.removeItem("user");
-      window.location.href = "login.html";
+      try {
+        await signOut(auth);
+        localStorage.removeItem("user");
+        window.location.href = LOGIN_PAGE;
+      } catch (error) {
+        console.error("Logout failed:", error);
+      }
     });
   </script>
 </body>

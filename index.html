@@ -6,11 +6,12 @@
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="flex items-center justify-center h-screen bg-cyan-100">
-  <div class="bg-white p-8 rounded-2xl shadow-md text-center">
-    <h1 class="text-2xl font-bold mb-6">Login ke TheChat</h1>
-    <button id="loginBtn" class="bg-cyan-500 text-white px-4 py-2 rounded-lg hover:bg-cyan-600">
+  <div class="bg-white p-8 rounded-2xl shadow-md text-center max-w-sm w-full">
+    <h1 class="text-2xl font-bold mb-6 text-cyan-600">Selamat Datang di TheChat</h1>
+    <button id="loginBtn" class="w-full bg-cyan-500 text-white px-4 py-3 rounded-lg hover:bg-cyan-600 transition duration-150 transform hover:scale-[1.02]">
       Login dengan Google
     </button>
+    <p id="errorMsg" class="mt-4 text-red-500 hidden"></p>
   </div>
 
   <script type="module">
@@ -32,29 +33,58 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
     const messaging = getMessaging(app);
+    const errorMsgEl = document.getElementById("errorMsg");
+
+    // Fungsi untuk menampilkan pesan kesalahan
+    function displayError(message) {
+      errorMsgEl.textContent = `Login gagal: ${message}`;
+      errorMsgEl.classList.remove('hidden');
+      setTimeout(() => errorMsgEl.classList.add('hidden'), 5000);
+    }
 
     document.getElementById("loginBtn").addEventListener("click", async () => {
       const provider = new GoogleAuthProvider();
       try {
         const result = await signInWithPopup(auth, provider);
         const user = result.user;
+        let token = null;
 
-        // minta izin notifikasi
-        await Notification.requestPermission();
-        const token = await getToken(messaging, { vapidKey: "BEJ4yWrcXDUXWEg_L40QmwNDgA2II_hda9_0LulXRjmNBIxXXZn-tS3v_-ioaEUMHyr05vK-kIah2AP-XMvPyZs" });
+        // 1. Minta izin notifikasi
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          // 2. Ambil token FCM
+          try {
+            token = await getToken(messaging, { vapidKey: "BEJ4yWrcXDUXWEg_L40QmwNDgA2II_hda9_0LulXRjmNBIxXXZn-tS3v_-ioaEUMHyr05vK-kIah2AP-XMvPyZs" });
+            console.log("FCM Token berhasil diambil.");
+          } catch (e) {
+            console.error("Gagal mendapatkan FCM Token:", e.message);
+            // Token gagal diambil, lanjutkan tanpa token
+          }
+        } else {
+          console.warn("Izin notifikasi ditolak.");
+        }
 
-        await setDoc(doc(db, "users", user.uid), {
+
+        // 3. Simpan data pengguna dan token (jika ada)
+        const userData = {
           uid: user.uid,
           name: user.displayName,
           email: user.email,
           photoURL: user.photoURL,
-          fcmToken: token
-        }, { merge: true });
+        };
+        if (token) {
+          userData.fcmToken = token;
+        }
 
+        await setDoc(doc(db, "users", user.uid), userData, { merge: true });
+
+        // 4. Simpan info user di LocalStorage dan arahkan
         localStorage.setItem("user", JSON.stringify(user));
         window.location.href = "contacts.html";
+
       } catch (e) {
-        alert("Login gagal: " + e.message);
+        console.error("Login gagal:", e);
+        displayError(e.message);
       }
     });
   </script>
